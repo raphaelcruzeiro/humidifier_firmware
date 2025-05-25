@@ -11,6 +11,7 @@
 
 typedef struct {
     bool power;
+    bool auto_mode;
     uint8_t timer_hours;
     uint8_t mist_level;
     bool warm_mist;

@@ -11,6 +11,7 @@ static const char *TAG = "humidifier_control";
 
 static humidifier_status_t s_status = {
     .power = false,
+    .auto_mode = false,
     .timer_hours = 0,
     .mist_level = 0,
     .warm_mist = false,
@@ -26,6 +27,12 @@ static bool s_ready = false;
 static void update_status_from_dp(uint8_t dp_id, uint8_t dp_type, uint8_t dp_len, const uint8_t *value)
 {
     switch (dp_id) {
+        case 0x02: // Auto mode
+            if (dp_type == 0x01 && dp_len == 1) {
+                s_status.auto_mode = value[0] ? true : false;
+                ESP_LOGI(TAG, "Auto mode updated to %s", s_status.auto_mode ?  "ON" : "OFF");
+            }
+            break;
         case 0x13: // Timer
             if (dp_type == 0x04 && dp_len == 1) {
                 s_status.timer_hours = value[0];
@@ -234,8 +241,9 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
 
             pos += 4 + dp_len;
         }
-        ESP_LOGI(TAG, "🧾 Summary → Power: %s | Mist Level: %u | Warm Mist: %s | Target Humidity: %u%% | Timer: %dh | Temp: %d°C | RH: %u%%",
+        ESP_LOGI(TAG, "🧾 Summary → Power: %s | 🤖 Auto mode: %s | Mist Level: %u | Warm Mist: %s | Target Humidity: %u%% | Timer: %dh | Temp: %d°C | RH: %u%%",
                  s_status.power ? "ON" : "OFF",
+                 s_status.auto_mode ? "ON" : "OFF",
                  s_status.mist_level,
                  s_status.warm_mist ? "ON" : "OFF",
                  s_status.target_humidity,
