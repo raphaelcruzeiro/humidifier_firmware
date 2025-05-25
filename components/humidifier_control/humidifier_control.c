@@ -4,8 +4,8 @@
 #include "esp_log.h"
 
 #define UART_NUM_1 UART_NUM_1
-#define TXD_PIN GPIO_NUM_18
-#define RXD_PIN GPIO_NUM_19
+#define TXD_PIN GPIO_NUM_19
+#define RXD_PIN GPIO_NUM_18
 
 static const char *TAG = "humidifier_control";
 
@@ -23,7 +23,7 @@ static humidifier_status_t s_status = {
 
 static bool s_ready = false;
 static void (*s_update_callback)(const humidifier_status_t *) = NULL;
-static bool s_log_raw_bytes = false;
+static bool s_log_raw_bytes = true;
 
 // Helper to update s_status from a DP field
 static void update_status_from_dp(uint8_t dp_id, uint8_t dp_type, uint8_t dp_len, const uint8_t *value)
