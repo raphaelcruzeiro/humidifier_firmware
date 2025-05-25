@@ -332,6 +332,7 @@ esp_err_t humidifier_control_set_power(bool on)
     ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.power = on;
+    if (s_update_callback) s_update_callback(&s_status);
 
     uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
 
@@ -344,31 +345,36 @@ esp_err_t humidifier_control_set_timer(uint8_t hours)
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t buf[9];
-    // Construct Tuya frame:
-    // CMD = 0x06
-    // DP_ID = 0x13 (timer), DP_TYPE = 0x04, DP_LEN = 0x01, DP_VALUE = hours
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
     buf[0] = 0x55;
     buf[1] = 0xAA;
-    buf[2] = 0x06;
-    buf[3] = 0x05; // LEN: 4 bytes of DP data
-    buf[4] = 0x13; // DP_ID timer
-    buf[5] = 0x04; // DP_TYPE uint8
-    buf[6] = 0x01; // DP_LEN
-    buf[7] = hours;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x13;      // DP_ID: Timer
+    buf[7] = 0x04;      // DP_TYPE: uint8
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = hours;
 
     uint8_t checksum = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 11; ++i) {
         checksum += buf[i];
     }
-    buf[8] = checksum;
+    buf[11] = checksum;
 
     ESP_LOGI(TAG, "Sending timer command: %d hours", hours);
-    ESP_LOG_BUFFER_HEX(TAG, buf, 9);
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.timer_hours = hours;
+    if (s_update_callback) s_update_callback(&s_status);
 
-    uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
 
     return ESP_OK;
 }
@@ -379,30 +385,35 @@ esp_err_t humidifier_control_set_mist_level(mist_level_t level)
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t buf[9];
-    // Construct Tuya frame for mist level:
-    // CMD = 0x06
-    // DP_ID = 0x10, DP_TYPE = 0x04, DP_LEN = 0x01, DP_VALUE = level
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
     buf[0] = 0x55;
     buf[1] = 0xAA;
-    buf[2] = 0x06;
-    buf[3] = 0x05;
-    buf[4] = 0x10; // DP_ID mist_level
-    buf[5] = 0x04; // DP_TYPE uint8
-    buf[6] = 0x01; // DP_LEN
-    buf[7] = level;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x17;      // DP_ID: Mist Level
+    buf[7] = 0x04;      // DP_TYPE: uint8
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = level;
 
     uint8_t checksum = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 11; ++i) {
         checksum += buf[i];
     }
-    buf[8] = checksum;
+    buf[11] = checksum;
 
     ESP_LOGI(TAG, "Sending mist level command: %u", level);
-    ESP_LOG_BUFFER_HEX(TAG, buf, 9);
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.mist_level = level;
-    uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
+    if (s_update_callback) s_update_callback(&s_status);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
     return ESP_OK;
 }
 
@@ -412,29 +423,35 @@ esp_err_t humidifier_control_set_warm_mist(bool enable)
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t buf[9];
-    // CMD = 0x06
-    // DP_ID = 0x14, DP_TYPE = 0x01, DP_LEN = 0x01, DP_VALUE = enable
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
     buf[0] = 0x55;
     buf[1] = 0xAA;
-    buf[2] = 0x06;
-    buf[3] = 0x05;
-    buf[4] = 0x14; // DP_ID warm_mist
-    buf[5] = 0x01; // DP_TYPE bool
-    buf[6] = 0x01; // DP_LEN
-    buf[7] = enable ? 1 : 0;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x1A;      // DP_ID: Warm Mist
+    buf[7] = 0x01;      // DP_TYPE: bool
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = enable ? 1 : 0;
 
     uint8_t checksum = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 11; ++i) {
         checksum += buf[i];
     }
-    buf[8] = checksum;
+    buf[11] = checksum;
 
     ESP_LOGI(TAG, "Sending warm mist command: %s", enable ? "ON" : "OFF");
-    ESP_LOG_BUFFER_HEX(TAG, buf, 9);
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.warm_mist = enable;
-    uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
+    if (s_update_callback) s_update_callback(&s_status);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
     return ESP_OK;
 }
 
@@ -444,29 +461,35 @@ esp_err_t humidifier_control_set_target_humidity(target_humidity_level_t humidit
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t buf[9];
-    // CMD = 0x06
-    // DP_ID = 0x15, DP_TYPE = 0x04, DP_LEN = 0x01, DP_VALUE = humidity
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
     buf[0] = 0x55;
     buf[1] = 0xAA;
-    buf[2] = 0x06;
-    buf[3] = 0x05;
-    buf[4] = 0x15; // DP_ID target_humidity
-    buf[5] = 0x04; // DP_TYPE uint8
-    buf[6] = 0x01; // DP_LEN
-    buf[7] = humidity;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x04;      // DP_ID: Target Humidity
+    buf[7] = 0x04;      // DP_TYPE: uint8
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = humidity;
 
     uint8_t checksum = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 11; ++i) {
         checksum += buf[i];
     }
-    buf[8] = checksum;
+    buf[11] = checksum;
 
     ESP_LOGI(TAG, "Sending target humidity command: %u", humidity);
-    ESP_LOG_BUFFER_HEX(TAG, buf, 9);
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.target_humidity = humidity;
-    uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
+    if (s_update_callback) s_update_callback(&s_status);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
     return ESP_OK;
 }
 
@@ -477,29 +500,73 @@ esp_err_t humidifier_control_set_sleep_mode(bool enable)
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t buf[9];
-    // CMD = 0x06
-    // DP_ID = 0x16, DP_TYPE = 0x01, DP_LEN = 0x01, DP_VALUE = enable
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
     buf[0] = 0x55;
     buf[1] = 0xAA;
-    buf[2] = 0x06;
-    buf[3] = 0x05;
-    buf[4] = 0x16; // DP_ID sleep_mode
-    buf[5] = 0x01; // DP_TYPE bool
-    buf[6] = 0x01; // DP_LEN
-    buf[7] = enable ? 1 : 0;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x16;      // DP_ID: Sleep Mode
+    buf[7] = 0x01;      // DP_TYPE: bool
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = enable ? 1 : 0;
 
     uint8_t checksum = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 11; ++i) {
         checksum += buf[i];
     }
-    buf[8] = checksum;
+    buf[11] = checksum;
 
     ESP_LOGI(TAG, "Sending sleep mode command: %s", enable ? "ON" : "OFF");
-    ESP_LOG_BUFFER_HEX(TAG, buf, 9);
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
 
     s_status.sleep_mode = enable;
-    uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
+    if (s_update_callback) s_update_callback(&s_status);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
+    return ESP_OK;
+}
+
+esp_err_t humidifier_control_set_auto_mode(bool enable)
+{
+    if (!s_ready) {
+        ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!s_status.power) {
+        ESP_LOGW(TAG, "Command ignored: humidifier is powered off");
+        return ESP_ERR_INVALID_STATE;
+    }
+    uint8_t buf[12];
+    buf[0] = 0x55;
+    buf[1] = 0xAA;
+    buf[2] = 0x00;      // Version
+    buf[3] = 0x06;      // Command: write DP
+    buf[4] = 0x00;      // Length high byte
+    buf[5] = 0x05;      // Length low byte
+    buf[6] = 0x02;      // DP_ID: Auto Mode
+    buf[7] = 0x01;      // DP_TYPE: bool
+    buf[8] = 0x00;      // Reserved
+    buf[9] = 0x01;      // DP_LEN
+    buf[10] = enable ? 1 : 0;
+
+    uint8_t checksum = 0;
+    for (int i = 0; i < 11; ++i) {
+        checksum += buf[i];
+    }
+    buf[11] = checksum;
+
+    ESP_LOGI(TAG, "Sending auto mode command: %s", enable ? "ON" : "OFF");
+    ESP_LOG_BUFFER_HEX(TAG, buf, 12);
+
+    s_status.auto_mode = enable;
+    if (s_update_callback) s_update_callback(&s_status);
+    uart_write_bytes(UART_NUM_1, (const char *)buf, 12);
     return ESP_OK;
 }
 

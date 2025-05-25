@@ -29,15 +29,6 @@ void app_main(void)
     humidifier_control_init();
 
     humidifier_control_register_callback(&humidifier_status_callback);
-
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    ESP_LOGI("main", "Turning humidifier ON");
-    humidifier_control_set_power(true);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    ESP_LOGI("main", "Turning humidifier OFF");
-    humidifier_control_set_power(false);
 }
 
 static void humidifier_status_callback(const humidifier_status_t *s_status) {
@@ -75,11 +66,56 @@ static char *humidifier_status_to_json(const humidifier_status_t *s_status) {
     return json_str;
 }
 
+static void mqtt_command_callback(const char *topic, const char *payload) {
+    ESP_LOGI(TAG, "📥 MQTT Command Received → Topic: %s | Payload: %s", topic, payload);
+
+    cJSON *root = cJSON_Parse(payload);
+    if (!root) {
+        ESP_LOGE(TAG, "❌ Failed to parse JSON");
+        return;
+    }
+
+    const cJSON *cmd = cJSON_GetObjectItem(root, "command");
+    const cJSON *arg = cJSON_GetObjectItem(root, "argument");
+
+    if (!cJSON_IsString(cmd)) {
+        ESP_LOGE(TAG, "❌ Invalid command format");
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (strcmp(cmd->valuestring, "power") == 0 && cJSON_IsBool(arg)) {
+        humidifier_control_set_power(cJSON_IsTrue(arg));
+    } else if (strcmp(cmd->valuestring, "auto_mode") == 0 && cJSON_IsBool(arg)) {
+        humidifier_control_set_auto_mode(cJSON_IsTrue(arg));
+    } else if (strcmp(cmd->valuestring, "warm_mist") == 0 && cJSON_IsBool(arg)) {
+        humidifier_control_set_warm_mist(cJSON_IsTrue(arg));
+    } else if (strcmp(cmd->valuestring, "mist_level") == 0 && cJSON_IsString(arg)) {
+        mist_level_t level;
+        if (strcmp(arg->valuestring, "low") == 0) level = MIST_LEVEL_LOW;
+        else if (strcmp(arg->valuestring, "medium") == 0) level = MIST_LEVEL_MEDIUM;
+        else if (strcmp(arg->valuestring, "high") == 0) level = MIST_LEVEL_HIGH;
+        else level = MIST_LEVEL_OFF;
+        humidifier_control_set_mist_level(level);
+    } else if (strcmp(cmd->valuestring, "target_humidity") == 0 && cJSON_IsNumber(arg)) {
+        target_humidity_level_t level = (target_humidity_level_t)((arg->valuedouble - 35) / 5);
+        humidifier_control_set_target_humidity(level);
+    } else if (strcmp(cmd->valuestring, "timer") == 0 && cJSON_IsNumber(arg)) {
+        humidifier_control_set_timer((uint8_t)arg->valuedouble);
+    } else {
+        ESP_LOGW(TAG, "⚠️ Unknown or invalid command: %s", cmd->valuestring);
+    }
+
+    cJSON_Delete(root);
+}
+
 static void wifi_ready_callback(void) {
     humidifier_mqtt_register_ready_callback(&mqtt_ready_callback);
+    humidifier_mqtt_register_command_callback(&mqtt_command_callback);
     humidifier_mqtt_init();
 }
 
 static void mqtt_ready_callback(void) {
     mqtt_ready = true;
 }
+

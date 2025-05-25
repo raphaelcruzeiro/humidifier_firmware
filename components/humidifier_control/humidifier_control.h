@@ -11,7 +11,8 @@
 typedef enum {
     MIST_LEVEL_LOW = 0,
     MIST_LEVEL_MEDIUM = 1,
-    MIST_LEVEL_HIGH = 2
+    MIST_LEVEL_HIGH = 2,
+    MIST_LEVEL_OFF = 255
 } mist_level_t;
 
 typedef enum {
@@ -47,6 +48,7 @@ esp_err_t humidifier_control_set_timer(uint8_t hours);
 esp_err_t humidifier_control_set_mist_level(mist_level_t level);
 esp_err_t humidifier_control_set_warm_mist(bool enable);
 esp_err_t humidifier_control_set_target_humidity(target_humidity_level_t humidity);
+esp_err_t humidifier_control_set_auto_mode(bool enable);
 const char *mist_level_to_string(mist_level_t level);
 const char *target_humidity_to_string(target_humidity_level_t humidity);
 void humidifier_control_register_callback(void (*callback)(const humidifier_status_t *));
