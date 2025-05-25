@@ -9,6 +9,8 @@
 
 #define WIFI_MAX_RETRY 5
 static const char *TAG = "wifi";
+static void (*s_wifi_connected_cb)(void) = NULL;
+
 static int retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
@@ -43,6 +45,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         initialize_sntp();
+        if (s_wifi_connected_cb) {
+            s_wifi_connected_cb();
+        }
     }
 }
 
@@ -91,4 +96,8 @@ void wifi_init_sta(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
+}
+
+void wifi_register_connected_callback(void (*callback)(void)) {
+    s_wifi_connected_cb = callback;
 }

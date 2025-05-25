@@ -8,5 +8,6 @@ esp_err_t wifi_init_sta(void);
 
 // Enables or disables raw logging of Wi-Fi debug information
 void wifi_set_debug(bool enable);
+void wifi_register_connected_callback(void (*callback)(void));
 
 #endif // WIFI_H
