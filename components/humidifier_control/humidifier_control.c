@@ -22,66 +22,100 @@ static humidifier_status_t s_status = {
 };
 
 static bool s_ready = false;
+static void (*s_update_callback)(const humidifier_status_t *) = NULL;
+static bool s_log_raw_bytes = false;
 
 // Helper to update s_status from a DP field
 static void update_status_from_dp(uint8_t dp_id, uint8_t dp_type, uint8_t dp_len, const uint8_t *value)
 {
+    bool updated = false;
     switch (dp_id) {
         case 0x02: // Auto mode
             if (dp_type == 0x01 && dp_len == 1) {
-                s_status.auto_mode = value[0] ? true : false;
-                ESP_LOGI(TAG, "Auto mode updated to %s", s_status.auto_mode ?  "ON" : "OFF");
+                bool new_auto_mode = value[0] ? true : false;
+                if (s_status.auto_mode != new_auto_mode) {
+                    s_status.auto_mode = new_auto_mode;
+                    updated = true;
+                }
             }
             break;
         case 0x13: // Timer
             if (dp_type == 0x04 && dp_len == 1) {
-                s_status.timer_hours = value[0];
-                ESP_LOGI(TAG, "Timer updated to %d hours", s_status.timer_hours);
+                uint8_t new_timer_hours = value[0];
+                if (s_status.timer_hours != new_timer_hours) {
+                    s_status.timer_hours = new_timer_hours;
+                    updated = true;
+                }
             }
             break;
         case 0x17: // Mist Level
             if (dp_type == 0x04 && dp_len == 1) {
-                s_status.mist_level = value[0] != 0xFF ? (mist_level_t)value[0] : MIST_LEVEL_LOW;
-                ESP_LOGI(TAG, "Mist level updated to %s", mist_level_to_string(s_status.mist_level));
+                mist_level_t new_mist_level = value[0] != 0xFF ? (mist_level_t)value[0] : MIST_LEVEL_LOW;
+                if (s_status.mist_level != new_mist_level) {
+                    s_status.mist_level = new_mist_level;
+                    updated = true;
+                }
             }
             break;
         case 0x1A: // Warm Mist
             if (dp_type == 0x01 && dp_len == 1) {
-                s_status.warm_mist = value[0] ? true : false;
-                ESP_LOGI(TAG, "Warm mist updated to %s", s_status.warm_mist ? "ON" : "OFF");
+                bool new_warm_mist = value[0] ? true : false;
+                if (s_status.warm_mist != new_warm_mist) {
+                    s_status.warm_mist = new_warm_mist;
+                    updated = true;
+                }
             }
             break;
         case 0x04: // Target Humidity
             if (dp_type == 0x04 && dp_len == 1) {
-                s_status.target_humidity = (target_humidity_level_t)value[0];
-                ESP_LOGI(TAG, "Target humidity updated to %s%%", target_humidity_to_string(s_status.target_humidity));
+                target_humidity_level_t new_target_humidity = (target_humidity_level_t)value[0];
+                if (s_status.target_humidity != new_target_humidity) {
+                    s_status.target_humidity = new_target_humidity;
+                    updated = true;
+                }
             }
             break;
         case 0x16: // Sleep Mode
             if (dp_type == 0x01 && dp_len == 1) {
-                s_status.sleep_mode = value[0] ? true : false;
-                ESP_LOGI(TAG, "Sleep mode updated to %s", s_status.sleep_mode ? "ON" : "OFF");
+                bool new_sleep_mode = value[0] ? true : false;
+                if (s_status.sleep_mode != new_sleep_mode) {
+                    s_status.sleep_mode = new_sleep_mode;
+                    updated = true;
+                }
             }
             break;
         case 0x0A: // Temperature
             if (dp_type == 0x02 && dp_len == 4) {
                 int32_t temp_raw = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-                s_status.temperature_celsius = temp_raw;
-                ESP_LOGI(TAG, "Temperature updated to %d °C", temp_raw);
+                if ((int32_t)s_status.temperature_celsius != temp_raw) {
+                    s_status.temperature_celsius = temp_raw;
+                    updated = true;
+                }
             }
             break;
         case 0x0E: // Current Humidity
             if (dp_type == 0x02 && dp_len == 4) {
                 int32_t humidity_raw = (value[0] << 24) | (value[1] << 16) | (value[2] << 8) | value[3];
-                s_status.current_humidity = humidity_raw;
-                ESP_LOGI(TAG, "Humidity updated to %d %%", s_status.current_humidity);
+                if (s_status.current_humidity != humidity_raw) {
+                    s_status.current_humidity = humidity_raw;
+                    updated = true;
+                }
             }
             break;
         case 0x01: // Power
-            s_status.power = value[0] ? true : false;
+            {
+                bool new_power = value[0] ? true : false;
+                if (s_status.power != new_power) {
+                    s_status.power = new_power;
+                    updated = true;
+                }
+            }
             break;
         default:
             break;
+    }
+    if (updated && s_update_callback) {
+        s_update_callback(&s_status);
     }
 }
 
@@ -93,7 +127,6 @@ static void heartbeat_task(void *arg)
 
     while (1) {
         uart_write_bytes(UART_NUM_1, (const char *)heartbeat, sizeof(heartbeat));
-        ESP_LOGI(TAG, "Sent heartbeat frame");
         vTaskDelay(pdMS_TO_TICKS(5000)); // Send every 5 seconds
     }
 }
@@ -149,7 +182,6 @@ void uart_read_task(void *arg)
             continue;
         }
         if (len > 0) {
-            ESP_LOG_BUFFER_HEX(TAG, buf, len);
             humidifier_control_extract_tuya_frames(buf, len);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -199,7 +231,6 @@ void humidifier_control_init(void)
     for (int i = 0; i < 10; ++i) {
         const uint8_t heartbeat[] = {0x55, 0xAA, 0x03, 0x00, 0x00, 0x01, 0x01, 0x04};
         uart_write_bytes(UART_NUM_1, (const char *)heartbeat, sizeof(heartbeat));
-        ESP_LOGI(TAG, "Sent heartbeat frame (init loop)");
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
@@ -221,9 +252,11 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
 
     uint8_t cmd = data[2];
     if (cmd == 0x03) {
-        ESP_LOGI(TAG, "Raw status update frame:");
-        ESP_LOG_BUFFER_HEX(TAG, data, len);
-        ESP_LOGI(TAG, "📨 Handling incoming status report (MCU → Wi-Fi)");
+        if (s_log_raw_bytes) {
+            ESP_LOGI(TAG, "Raw status update frame:");
+            ESP_LOG_BUFFER_HEX(TAG, data, len);
+        }
+        
         // Parse and log all DP fields in a friendly format using correct Tuya DP parsing
         size_t pos = 6; // Start at byte 6: first DP_ID
         while (pos + 3 < len) {
@@ -241,23 +274,11 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
 
             pos += 4 + dp_len;
         }
-        ESP_LOGI(TAG, "🧾 Summary → Power: %s | 🤖 Auto mode: %s | Mist Level: %s | Warm Mist: %s | Target Humidity: %s%% | Timer: %dh | Temp: %d°C | RH: %u%%",
-                 s_status.power ? "ON" : "OFF",
-                 s_status.auto_mode ? "ON" : "OFF",
-                 mist_level_to_string(s_status.mist_level),
-                 s_status.warm_mist ? "ON" : "OFF",
-                 target_humidity_to_string(s_status.target_humidity),
-                 s_status.timer_hours,
-                 (int)s_status.temperature_celsius,
-                 s_status.current_humidity);
-        ESP_LOGI(TAG, "📡 End of MCU status report");
+        
     }
     if (cmd == 0x07) { // Received DP command
-        ESP_LOGI(TAG, "✅ Entered DP frame handler");
-        ESP_LOGI(TAG, "📡 Received status report from MCU");
         s_ready = true;
-        ESP_LOGI(TAG, "🔛 Marking MCU as ready to receive commands");
-        ESP_LOGI(TAG, "MCU marked as ready to receive commands");
+
         // Parse DP fields (start at offset 4)
         size_t pos = 0;
         while (pos + 7 <= len) {
@@ -273,18 +294,6 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
             update_status_from_dp(dp_id, dp_type, dp_len, value);
             pos += 7 + dp_len;
         }
-        ESP_LOGI(TAG, "📝 Current Status → Power: %s | Timer: %dh | Mist Level: %s | Warm Mist: %s | Target Humidity: %s%% | Temp: %d°C | Sleep Mode: %s",
-                 s_status.power ? "ON" : "OFF",
-                 s_status.timer_hours,
-                 mist_level_to_string(s_status.mist_level),
-                 s_status.warm_mist ? "ON" : "OFF",
-                 target_humidity_to_string(s_status.target_humidity),
-                 (int)s_status.temperature_celsius,
-                 s_status.sleep_mode ? "ON" : "OFF");
-        ESP_LOGI(TAG, "📦 Status report handled");
-        ESP_LOGI(TAG, "✅ End of DP frame processing");
-    } else {
-        ESP_LOGI(TAG, "ℹ️ Ignored frame with cmd=0x%02X", cmd);
     }
 }
 
@@ -515,4 +524,12 @@ const char *target_humidity_to_string(target_humidity_level_t humidity) {
         case HUMIDITY_70: return "70";
         default: return "unknown";
     }
+}
+
+void humidifier_control_register_callback(void (*callback)(const humidifier_status_t *)) {
+    s_update_callback = callback;
+}
+
+void humidifier_control_set_log_raw_bytes(bool enable) {
+    s_log_raw_bytes = enable;
 }

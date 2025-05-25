@@ -37,6 +37,7 @@ typedef struct {
     uint8_t current_humidity;
 } humidifier_status_t;
 
+void humidifier_control_set_log_raw_bytes(bool enabled); 
 void uart_read_task(void *arg);
 void humidifier_control_init(void);
 void humidifier_control_handle_uart_data(const uint8_t *data, size_t len);
@@ -48,5 +49,6 @@ esp_err_t humidifier_control_set_warm_mist(bool enable);
 esp_err_t humidifier_control_set_target_humidity(target_humidity_level_t humidity);
 const char *mist_level_to_string(mist_level_t level);
 const char *target_humidity_to_string(target_humidity_level_t humidity);
+void humidifier_control_register_callback(void (*callback)(const humidifier_status_t *));
 
 #endif // HUMIDIFIER_CONTROL
