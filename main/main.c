@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "humidifier_control.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+
+#include "humidifier_control.h"
+#include "wifi.h"
 
 static char *TAG = "main";
 
@@ -11,6 +13,10 @@ static void humidifier_status_callback(const humidifier_status_t *s_status);
 
 void app_main(void)
 {
+    ESP_LOGI("main", "Initializing humidifier Wifi...");
+
+    wifi_init_sta();
+
     ESP_LOGI("main", "Initializing humidifier control...");
     humidifier_control_init();
 
