@@ -13,9 +13,9 @@ static humidifier_status_t s_status = {
     .power = false,
     .auto_mode = false,
     .timer_hours = 0,
-    .mist_level = 0,
+    .mist_level = MIST_LEVEL_LOW,
     .warm_mist = false,
-    .target_humidity = 0,
+    .target_humidity = HUMIDITY_35,
     .sleep_mode = false,
     .temperature_celsius = 0.0f,
     .current_humidity = 0,
@@ -41,8 +41,8 @@ static void update_status_from_dp(uint8_t dp_id, uint8_t dp_type, uint8_t dp_len
             break;
         case 0x17: // Mist Level
             if (dp_type == 0x04 && dp_len == 1) {
-                s_status.mist_level = value[0] != 0xFF ? value[0] : 0;
-                ESP_LOGI(TAG, "Mist level updated to %u", s_status.mist_level);
+                s_status.mist_level = value[0] != 0xFF ? (mist_level_t)value[0] : MIST_LEVEL_LOW;
+                ESP_LOGI(TAG, "Mist level updated to %s", mist_level_to_string(s_status.mist_level));
             }
             break;
         case 0x1A: // Warm Mist
@@ -51,10 +51,10 @@ static void update_status_from_dp(uint8_t dp_id, uint8_t dp_type, uint8_t dp_len
                 ESP_LOGI(TAG, "Warm mist updated to %s", s_status.warm_mist ? "ON" : "OFF");
             }
             break;
-        case 0x15: // Target Humidity
+        case 0x04: // Target Humidity
             if (dp_type == 0x04 && dp_len == 1) {
-                s_status.target_humidity = value[0];
-                ESP_LOGI(TAG, "Target humidity updated to %u", s_status.target_humidity);
+                s_status.target_humidity = (target_humidity_level_t)value[0];
+                ESP_LOGI(TAG, "Target humidity updated to %s%%", target_humidity_to_string(s_status.target_humidity));
             }
             break;
         case 0x16: // Sleep Mode
@@ -241,12 +241,12 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
 
             pos += 4 + dp_len;
         }
-        ESP_LOGI(TAG, "🧾 Summary → Power: %s | 🤖 Auto mode: %s | Mist Level: %u | Warm Mist: %s | Target Humidity: %u%% | Timer: %dh | Temp: %d°C | RH: %u%%",
+        ESP_LOGI(TAG, "🧾 Summary → Power: %s | 🤖 Auto mode: %s | Mist Level: %s | Warm Mist: %s | Target Humidity: %s%% | Timer: %dh | Temp: %d°C | RH: %u%%",
                  s_status.power ? "ON" : "OFF",
                  s_status.auto_mode ? "ON" : "OFF",
-                 s_status.mist_level,
+                 mist_level_to_string(s_status.mist_level),
                  s_status.warm_mist ? "ON" : "OFF",
-                 s_status.target_humidity,
+                 target_humidity_to_string(s_status.target_humidity),
                  s_status.timer_hours,
                  (int)s_status.temperature_celsius,
                  s_status.current_humidity);
@@ -273,12 +273,12 @@ void humidifier_control_handle_uart_data(const uint8_t *data, size_t len)
             update_status_from_dp(dp_id, dp_type, dp_len, value);
             pos += 7 + dp_len;
         }
-        ESP_LOGI(TAG, "📝 Current Status → Power: %s | Timer: %dh | Mist Level: %u | Warm Mist: %s | Target Humidity: %u%% | Temp: %d°C | Sleep Mode: %s",
+        ESP_LOGI(TAG, "📝 Current Status → Power: %s | Timer: %dh | Mist Level: %s | Warm Mist: %s | Target Humidity: %s%% | Temp: %d°C | Sleep Mode: %s",
                  s_status.power ? "ON" : "OFF",
                  s_status.timer_hours,
-                 s_status.mist_level,
+                 mist_level_to_string(s_status.mist_level),
                  s_status.warm_mist ? "ON" : "OFF",
-                 s_status.target_humidity,
+                 target_humidity_to_string(s_status.target_humidity),
                  (int)s_status.temperature_celsius,
                  s_status.sleep_mode ? "ON" : "OFF");
         ESP_LOGI(TAG, "📦 Status report handled");
@@ -364,7 +364,7 @@ esp_err_t humidifier_control_set_timer(uint8_t hours)
     return ESP_OK;
 }
 
-esp_err_t humidifier_control_set_mist_level(uint8_t level)
+esp_err_t humidifier_control_set_mist_level(mist_level_t level)
 {
     if (!s_ready) {
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
@@ -429,7 +429,7 @@ esp_err_t humidifier_control_set_warm_mist(bool enable)
     return ESP_OK;
 }
 
-esp_err_t humidifier_control_set_target_humidity(uint8_t humidity)
+esp_err_t humidifier_control_set_target_humidity(target_humidity_level_t humidity)
 {
     if (!s_ready) {
         ESP_LOGW(TAG, "Command ignored: MCU not ready yet");
@@ -461,6 +461,7 @@ esp_err_t humidifier_control_set_target_humidity(uint8_t humidity)
     return ESP_OK;
 }
 
+
 esp_err_t humidifier_control_set_sleep_mode(bool enable)
 {
     if (!s_ready) {
@@ -491,4 +492,27 @@ esp_err_t humidifier_control_set_sleep_mode(bool enable)
     s_status.sleep_mode = enable;
     uart_write_bytes(UART_NUM_1, (const char *)buf, 9);
     return ESP_OK;
+}
+
+const char *mist_level_to_string(mist_level_t level) {
+    switch (level) {
+        case MIST_LEVEL_LOW: return "low";
+        case MIST_LEVEL_MEDIUM: return "medium";
+        case MIST_LEVEL_HIGH: return "high";
+        default: return "unknown";
+    }
+}
+
+const char *target_humidity_to_string(target_humidity_level_t humidity) {
+    switch (humidity) {
+        case HUMIDITY_35: return "35";
+        case HUMIDITY_40: return "40";
+        case HUMIDITY_45: return "45";
+        case HUMIDITY_50: return "50";
+        case HUMIDITY_55: return "55";
+        case HUMIDITY_60: return "60";
+        case HUMIDITY_65: return "65";
+        case HUMIDITY_70: return "70";
+        default: return "unknown";
+    }
 }
